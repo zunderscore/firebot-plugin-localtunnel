@@ -1,8 +1,8 @@
 {
-  "name": "firebot-custom-script-starter",
-  "scriptOutputName": "starterScript",
+  "name": "firebot-script-localtunnel",
+  "scriptOutputName": "localtunnel",
   "version": "1.0.0",
-  "description": "A starter Firebot custom script",
+  "description": "A Firebot custom script to create a localtunnel reverse proxy",
   "main": "",
   "scripts": {
     "build": "webpack",
@@ -10,11 +10,11 @@
     "copy": "node ./scripts/copy-build.js",
     "test": "jest"
   },
-  "author": "ebiggz",
-  "license": "GNU3",
+  "author": "zunderscore",
+  "license": "MIT",
   "devDependencies": {
     "@types/node": "^14.14.6",
-    "firebot-custom-scripts-types": "https://github.com/crowbartools/firebot-custom-scripts-types/tarball/c67f513bca798c77277a5c196e42b73fa01d782d",
+    "firebot-custom-scripts-types": "https://github.com/crowbartools/firebot-custom-scripts-types/tarball/4ab2a7d00f94e2936f716df85b5c24d83fe11f1c",
     "jest": "^26.6.3",
     "terser-webpack-plugin": "^4.2.3",
     "ts-jest": "^26.4.4",
@@ -23,5 +23,7 @@
     "webpack": "^4.44.2",
     "webpack-cli": "^4.1.0"
   },
-  "dependencies": {}
+  "dependencies": {
+    "localtunnel": "^2.0.2"
+  }
 }

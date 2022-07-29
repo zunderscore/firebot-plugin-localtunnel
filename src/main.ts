@@ -1,32 +1,37 @@
 import { Firebot } from "firebot-custom-scripts-types";
+const localtunnel = require("localtunnel");
 
 interface Params {
-  message: string;
+  rootUrl: string;
 }
 
 const script: Firebot.CustomScript<Params> = {
   getScriptManifest: () => {
     return {
-      name: "Starter Custom Script",
-      description: "A starter custom script for build",
-      author: "SomeDev",
+      name: "localtunnel",
+      description: "Creates a localtunnel reverse proxy connection for the internal Firebot web server",
+      author: "zunderscore",
       version: "1.0",
       firebotVersion: "5",
     };
   },
   getDefaultParameters: () => {
     return {
-      message: {
+      rootUrl: {
         type: "string",
-        default: "Hello World!",
-        description: "Message",
-        secondaryDescription: "Enter a message here",
+        default: "https://localtunnel.me",
+        description: "Root URL",
+        secondaryDescription: "Enter the root URL for the localtunnel instance you wish to use (or the default of https://localtunnel.me)",
       },
     };
   },
-  run: (runRequest) => {
-    const { logger } = runRequest.modules;
-    logger.info(runRequest.parameters.message);
+  run: async ({ parameters, modules, firebot }) => {
+    const { logger } = modules;
+    logger.info(`Connecting to ${parameters.rootUrl} to create tunnel to http://locahost:${firebot.settings.getWebServerPort()}`);
+
+    const tunnel = await localtunnel({ host: parameters.rootUrl, port: firebot.settings.getWebServerPort() });
+
+    logger.info(`Tunnel URL ${tunnel.url} connected to http://locahost:${firebot.settings.getWebServerPort()}`);
   },
 };
 
