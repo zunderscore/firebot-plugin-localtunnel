@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import { Firebot } from "firebot-custom-scripts-types";
+import { Firebot } from "@crowbartools/firebot-custom-scripts-types";
 const localtunnel = require("localtunnel");
 
 interface Params {
