@@ -1,100 +1,138 @@
+import { Firebot, ScriptModules } from "@crowbartools/firebot-custom-scripts-types";
 import { Request, Response } from "express";
-import { Firebot } from "@crowbartools/firebot-custom-scripts-types";
 const localtunnel = require("localtunnel");
 
-interface Params {
-  rootUrl: string;
-}
+import {
+    PLUGIN_NAME,
+    DEFAULT_LOCALTUNNEL_ROOT_URL,
+} from "./constants";
 
+const packageInfo = require("../package.json");
+
+let logger: ScriptModules["logger"];
+let httpServer: ScriptModules["httpServer"];
+
+const logDebug = (msg: string, ...meta: any[]) => logger.debug(`[${PLUGIN_NAME}] ${msg}`, ...meta);
+const logInfo = (msg: string, ...meta: any[]) => logger.info(`[${PLUGIN_NAME}] ${msg}`, ...meta);
+const logWarn = (msg: string, ...meta: any[]) => logger.warn(`[${PLUGIN_NAME}] ${msg}`, ...meta);
+const logError = (msg: string, ...meta: any[]) => logger.error(`[${PLUGIN_NAME}] ${msg}`, ...meta);
+
+let firebotPort: number;
+let rootUrl: string;
 let tunnel: any;
 let tunnelRootUrl: string;
 
-const script: Firebot.CustomScript<Params> = {
-  getScriptManifest: () => {
-    return {
-      name: "localtunnel",
-      description: "Creates a localtunnel reverse proxy connection for the internal Firebot web server",
-      author: "zunderscore",
-      version: "1.0",
-      firebotVersion: "5",
-    };
-  },
-  getDefaultParameters: () => {
-    return {
-      rootUrl: {
-        type: "string",
-        default: "",
-        description: "Root URL",
-        secondaryDescription: "Enter the root URL for the localtunnel instance you wish to use, or leave blank to use the default of https://localtunnel.me",
-      },
-    };
-  },
-  run: async ({ parameters, modules, firebot }) => {
-    const { logger, httpServer } = modules;
-    const port = firebot.settings.getWebServerPort();
-    const rootUrl = parameters.rootUrl || "https://localtunnel.me";
+async function updateTunnel(): Promise<void> {
+    logInfo(`Connecting to ${rootUrl} to create tunnel to http://locahost:${firebotPort}...`);
 
-    logger.info(`[localtunnel] Connecting to ${rootUrl} to create tunnel to http://locahost:${port}...`);
-
-    tunnel = await localtunnel({ host: rootUrl, port: port });
+    tunnel = await localtunnel({
+        host: rootUrl,
+        port: firebotPort ?? 7472
+    });
     tunnelRootUrl = tunnel.url.replace("http:", "https:");
 
-    logger.info(`[localtunnel] Tunnel URL ${tunnelRootUrl} connected to http://locahost:${port}`);
+    logInfo(`Tunnel URL ${tunnelRootUrl} connected to http://locahost:${firebotPort}`);
+}
 
-    httpServer.unregisterCustomRoute("localtunnel", "status", "GET");
-    httpServer.unregisterCustomRoute("localtunnel", "tunnel", "GET");
-    httpServer.unregisterCustomRoute("localtunnel", "tunnel", "POST");
-    httpServer.unregisterCustomRoute("localtunnel", "tunnel", "DELETE");
+const script: Firebot.CustomScript<{
+    rootUrl: string;
+}> = {
+    getScriptManifest: () => ({
+        name: PLUGIN_NAME,
+        description: packageInfo.description,
+        author: packageInfo.author,
+        version: packageInfo.version,
+        firebotVersion: "5",
+        startupOnly: true,
+    }),
+    getDefaultParameters: () => ({
+        rootUrl: {
+            type: "string",
+            title: "Root URL",
+            description: `Enter the root URL for the localtunnel instance you wish to use, or leave blank to use the default of ${DEFAULT_LOCALTUNNEL_ROOT_URL}`,
+            default: "",
+        },
+    }),
+    parametersUpdated: async (params) => {
+        rootUrl = params.rootUrl?.length
+            ? params.rootUrl
+            : DEFAULT_LOCALTUNNEL_ROOT_URL;
+        await updateTunnel();
+    },
+    run: async ({ parameters, modules, firebot }) => {
+        ({ logger, httpServer } = modules);
 
-    httpServer.registerCustomRoute("localtunnel", "status", "GET", async function (req: Request, res: Response) {
-      res.send({
-        status: "localtunnel Plugin is running",
-        tunnelConnected: !tunnel.closed,
-        tunnelRootUrl: tunnel.closed !== true ? tunnelRootUrl : null
-      });
-    });
+        logInfo(`Starting ${PLUGIN_NAME} plugin...`);
 
-    httpServer.registerCustomRoute("localtunnel", "tunnel", "GET", async function (req: Request, res: Response) {
-      res.redirect(`${tunnelRootUrl}/integrations/localtunnel/status`);
-    });
+        firebotPort = firebot.settings.getWebServerPort();
+        rootUrl = parameters.rootUrl?.length
+            ? parameters.rootUrl
+            : DEFAULT_LOCALTUNNEL_ROOT_URL;
+        await updateTunnel();
 
-    httpServer.registerCustomRoute("localtunnel", "tunnel", "POST", async function (req: Request, res: Response) {
-      try {
-        await new Promise((resolve, reject) => tunnel.open((err: string) => (err ? reject(err) : resolve(tunnel))));
-        tunnelRootUrl = tunnel.url.replace("http:", "https:");
-      } catch (error) {
-        res.statusCode = 500;
-        res.send({
-          result: "Failed to open tunnel",
-          error: error
+        logDebug("Registering HTTP routes...");
+        httpServer.registerCustomRoute("localtunnel", "status", "GET", async function (req: Request, res: Response) {
+            res.send({
+                status: "localtunnel Plugin is running",
+                tunnelConnected: !tunnel.closed,
+                tunnelRootUrl: tunnel.closed !== true ? tunnelRootUrl : null
+            });
         });
-      }
 
-      res.send({
-        result: "Tunnel opened",
-        tunnelConnected: !tunnel.closed,
-        tunnelRootUrl: tunnel.closed !== true ? tunnelRootUrl : null
-      });
-    });
-
-    httpServer.registerCustomRoute("localtunnel", "tunnel", "DELETE", async function (req: Request, res: Response) {
-      try {
-        tunnel.close();
-      } catch (error) {
-        res.statusCode = 500;
-        res.send({
-          result: "Failed to close tunnel",
-          error: error
+        httpServer.registerCustomRoute("localtunnel", "tunnel", "GET", async function (req: Request, res: Response) {
+            res.redirect(`${tunnelRootUrl}/integrations/localtunnel/status`);
         });
-      }
 
-      res.send({
-        result: "Tunnel closed",
-        tunnelConnected: !tunnel.closed,
-        tunnelRootUrl: tunnel.closed !== true ? tunnelRootUrl : null
-      });
-    });
-  }
+        httpServer.registerCustomRoute("localtunnel", "tunnel", "POST", async function (req: Request, res: Response) {
+            try {
+                await new Promise((resolve, reject) => tunnel.open((err: string) => (err ? reject(err) : resolve(tunnel))));
+                tunnelRootUrl = tunnel.url.replace("http:", "https:");
+            } catch (error) {
+                res.statusCode = 500;
+                res.send({
+                    result: "Failed to open tunnel",
+                    error: error
+                });
+            }
+
+            res.send({
+                result: "Tunnel opened",
+                tunnelConnected: !tunnel.closed,
+                tunnelRootUrl: tunnel.closed !== true ? tunnelRootUrl : null
+            });
+        });
+
+        httpServer.registerCustomRoute("localtunnel", "tunnel", "DELETE", async function (req: Request, res: Response) {
+            try {
+                tunnel.close();
+            } catch (error) {
+                res.statusCode = 500;
+                res.send({
+                    result: "Failed to close tunnel",
+                    error: error
+                });
+            }
+
+            res.send({
+                result: "Tunnel closed",
+                tunnelConnected: !tunnel.closed,
+                tunnelRootUrl: tunnel.closed !== true ? tunnelRootUrl : null
+            });
+        });
+
+        logInfo("Plugin ready. Listening for events.");
+    },
+    stop: () => {
+        logDebug(`Stopping ${PLUGIN_NAME} plugin...`);
+
+        logDebug("Unregistering HTTP routes...");
+        httpServer.unregisterCustomRoute("localtunnel", "status", "GET");
+        httpServer.unregisterCustomRoute("localtunnel", "tunnel", "GET");
+        httpServer.unregisterCustomRoute("localtunnel", "tunnel", "POST");
+        httpServer.unregisterCustomRoute("localtunnel", "tunnel", "DELETE");
+        
+        logInfo("Plugin stopped");
+    }
 };
 
 export default script;
