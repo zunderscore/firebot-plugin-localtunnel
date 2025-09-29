@@ -4,6 +4,9 @@
 
 This plugin is designed to create a publicly-accessible URL that can tunnel directly to your local Firebot instance from anywhere on the public internet. **USE AT YOUR OWN RISK!!**
 
+## Prerequisites
+- Firebot 5.65 or higher
+
 ## Setup
 
 1. Copy the `firebot-localtunnel.js` file into your Firebot profile's `scripts` folder (e.g. `%appdata%\Firebot\v5\profiles\Main Profile\scripts`)
