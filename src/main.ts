@@ -1,29 +1,21 @@
-import { Firebot, ScriptModules } from "@crowbartools/firebot-custom-scripts-types";
-import { Request, Response } from "express";
-const localtunnel = require("localtunnel");
+import firebot, { Plugin } from "@crowbartools/firebot-types";
+import localtunnel from "localtunnel";
 
 import {
     PLUGIN_NAME,
     DEFAULT_LOCALTUNNEL_ROOT_URL,
+    PLUGIN_ID,
 } from "./constants";
 
 const packageInfo = require("../package.json");
 
-let logger: ScriptModules["logger"];
-let httpServer: ScriptModules["httpServer"];
-
-const logDebug = (msg: string, ...meta: any[]) => logger.debug(`[${PLUGIN_NAME}] ${msg}`, ...meta);
-const logInfo = (msg: string, ...meta: any[]) => logger.info(`[${PLUGIN_NAME}] ${msg}`, ...meta);
-const logWarn = (msg: string, ...meta: any[]) => logger.warn(`[${PLUGIN_NAME}] ${msg}`, ...meta);
-const logError = (msg: string, ...meta: any[]) => logger.error(`[${PLUGIN_NAME}] ${msg}`, ...meta);
-
 let firebotPort: number;
-let rootUrl: string;
+let rootUrl: string = DEFAULT_LOCALTUNNEL_ROOT_URL;
 let tunnel: any;
 let tunnelRootUrl: string;
 
 async function updateTunnel(): Promise<void> {
-    logInfo(`Connecting to ${rootUrl} to create tunnel to http://locahost:${firebotPort}...`);
+    firebot.logger.info(`Connecting to ${rootUrl} to create tunnel to http://locahost:${firebotPort}...`);
 
     tunnel = await localtunnel({
         host: rootUrl,
@@ -31,108 +23,116 @@ async function updateTunnel(): Promise<void> {
     });
     tunnelRootUrl = tunnel.url.replace("http:", "https:");
 
-    logInfo(`Tunnel URL ${tunnelRootUrl} connected to http://locahost:${firebotPort}`);
+    firebot.logger.info(`Tunnel URL ${tunnelRootUrl} connected to http://locahost:${firebotPort}`);
 }
 
-const script: Firebot.CustomScript<{
+async function updateParams(rootUrl: string) {
+    rootUrl = rootUrl?.length
+        ? rootUrl
+        : DEFAULT_LOCALTUNNEL_ROOT_URL;
+    await updateTunnel();
+}
+
+const plugin: Plugin<{
     rootUrl: string;
 }> = {
-    getScriptManifest: () => ({
+    manifest: {
+        type: "plugin",
         name: PLUGIN_NAME,
         description: packageInfo.description,
         author: packageInfo.author,
         version: packageInfo.version,
-        firebotVersion: "5",
-        startupOnly: true,
-    }),
-    getDefaultParameters: () => ({
-        rootUrl: {
+        repo: "https://github.com/zunderscore/firebot-plugin-localtunnel",
+        icon: {
+            type: "font-awesome",
+            name: "fa-globe",
+            color: "#1D4ED8"
+        }
+    },
+    parametersSchema: [
+        {
+            name: "rootUrl",
             type: "string",
             title: "Root URL",
             description: `Enter the root URL for the localtunnel instance you wish to use, or leave blank to use the default of ${DEFAULT_LOCALTUNNEL_ROOT_URL}`,
             default: "",
-        },
-    }),
-    parametersUpdated: async (params) => {
-        rootUrl = params.rootUrl?.length
-            ? params.rootUrl
-            : DEFAULT_LOCALTUNNEL_ROOT_URL;
-        await updateTunnel();
+        }
+    ],
+    registers: {
+        httpRoutes: {
+            prefix: PLUGIN_ID,
+            routes: [
+                {
+                    path: "/status",
+                    method: "GET",
+                    handler: (_, res) => {
+                        res.send({
+                            status: "localtunnel Plugin is running",
+                            tunnelConnected: !tunnel.closed,
+                            tunnelRootUrl: tunnel.closed !== true ? tunnelRootUrl : null
+                        });
+                    }
+                },
+                {
+                    path: "/tunnel",
+                    method: "GET",
+                    handler: (_, res) => {
+                        res.redirect(`${tunnelRootUrl}/plugins/${PLUGIN_ID}/status`);
+                    }
+                },
+                {
+                    path: "/tunnel",
+                    method: "POST",
+                    handler: async (_, res) => {
+                        try {
+                            await new Promise((resolve, reject) => tunnel.open((err: string) => (err ? reject(err) : resolve(tunnel))));
+                            tunnelRootUrl = tunnel.url.replace("http:", "https:");
+                        } catch (error) {
+                            res.statusCode = 500;
+                            res.send({
+                                result: "Failed to open tunnel",
+                                error: error
+                            });
+                        }
+
+                        res.send({
+                            result: "Tunnel opened",
+                            tunnelConnected: !tunnel.closed,
+                            tunnelRootUrl: tunnel.closed !== true ? tunnelRootUrl : null
+                        });
+                    }
+                },
+                {
+                    path: "/tunnel",
+                    method: "DELETE",
+                    handler: (_, res) => {
+                        try {
+                            tunnel.close();
+                        } catch (error) {
+                            res.statusCode = 500;
+                            res.send({
+                                result: "Failed to close tunnel",
+                                error: error
+                            });
+                        }
+
+                        res.send({
+                            result: "Tunnel closed",
+                            tunnelConnected: !tunnel.closed,
+                            tunnelRootUrl: tunnel.closed !== true ? tunnelRootUrl : null
+                        });
+                    }
+                }
+            ]
+        }
     },
-    run: async ({ parameters, modules, firebot }) => {
-        ({ logger, httpServer } = modules);
-
-        logInfo(`Starting ${PLUGIN_NAME} plugin...`);
-
-        firebotPort = firebot.settings.getWebServerPort();
-        rootUrl = parameters.rootUrl?.length
-            ? parameters.rootUrl
-            : DEFAULT_LOCALTUNNEL_ROOT_URL;
-        await updateTunnel();
-
-        logDebug("Registering HTTP routes...");
-        httpServer.registerCustomRoute("localtunnel", "status", "GET", async function (req: Request, res: Response) {
-            res.send({
-                status: "localtunnel Plugin is running",
-                tunnelConnected: !tunnel.closed,
-                tunnelRootUrl: tunnel.closed !== true ? tunnelRootUrl : null
-            });
-        });
-
-        httpServer.registerCustomRoute("localtunnel", "tunnel", "GET", async function (req: Request, res: Response) {
-            res.redirect(`${tunnelRootUrl}/integrations/localtunnel/status`);
-        });
-
-        httpServer.registerCustomRoute("localtunnel", "tunnel", "POST", async function (req: Request, res: Response) {
-            try {
-                await new Promise((resolve, reject) => tunnel.open((err: string) => (err ? reject(err) : resolve(tunnel))));
-                tunnelRootUrl = tunnel.url.replace("http:", "https:");
-            } catch (error) {
-                res.statusCode = 500;
-                res.send({
-                    result: "Failed to open tunnel",
-                    error: error
-                });
-            }
-
-            res.send({
-                result: "Tunnel opened",
-                tunnelConnected: !tunnel.closed,
-                tunnelRootUrl: tunnel.closed !== true ? tunnelRootUrl : null
-            });
-        });
-
-        httpServer.registerCustomRoute("localtunnel", "tunnel", "DELETE", async function (req: Request, res: Response) {
-            try {
-                tunnel.close();
-            } catch (error) {
-                res.statusCode = 500;
-                res.send({
-                    result: "Failed to close tunnel",
-                    error: error
-                });
-            }
-
-            res.send({
-                result: "Tunnel closed",
-                tunnelConnected: !tunnel.closed,
-                tunnelRootUrl: tunnel.closed !== true ? tunnelRootUrl : null
-            });
-        });
-
-        logInfo("Plugin ready. Listening for events.");
+    onLoad: async ({ parameters }) => {
+        firebotPort = firebot.settings.getSetting("WebServerPort");
+        await updateParams(parameters.rootUrl);
     },
-    stop: () => {
-        logDebug(`Stopping ${PLUGIN_NAME} plugin...`);
-
-        logDebug("Unregistering HTTP routes...");
-        httpServer.unregisterCustomRoute("localtunnel", "status", "GET");
-        httpServer.unregisterCustomRoute("localtunnel", "tunnel", "GET");
-        httpServer.unregisterCustomRoute("localtunnel", "tunnel", "POST");
-        httpServer.unregisterCustomRoute("localtunnel", "tunnel", "DELETE");
-        
-        logInfo("Plugin stopped");
+    onParameterUpdate: async ({ parameters }) => {
+        await updateParams(parameters.rootUrl);
     }
-};
+}
 
-export default script;
+export default plugin;
