@@ -1,5 +1,5 @@
 import firebot, { Plugin } from "@crowbartools/firebot-types";
-import localtunnel from "localtunnel";
+const localtunnel = require("localtunnel");
 
 import {
     PLUGIN_NAME,
@@ -37,7 +37,6 @@ const plugin: Plugin<{
     rootUrl: string;
 }> = {
     manifest: {
-        type: "plugin",
         name: PLUGIN_NAME,
         description: packageInfo.description,
         author: packageInfo.author,
