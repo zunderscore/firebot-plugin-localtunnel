@@ -5,7 +5,7 @@
   "description": "A Firebot plugin to create a localtunnel reverse proxy",
   "main": "",
   "scripts": {
-    "build": "webpack",
+    "build": "tsdown",
     "build:dev": "npm run build && npm run copy",
     "copy": "node ./scripts/copy-build.js",
     "test": "jest"
@@ -13,15 +13,12 @@
   "author": "zunderscore",
   "license": "MIT",
   "devDependencies": {
-    "@crowbartools/firebot-types": "^5.67.0-alpha20",
+    "@crowbartools/firebot-types": "^5.67.0-alpha22",
     "@types/localtunnel": "^2.0.4",
     "jest": "^30.2.0",
-    "terser-webpack-plugin": "^5.3.14",
     "ts-jest": "^29.4.4",
-    "ts-loader": "^9.5.4",
-    "typescript": "^5.9.3",
-    "webpack": "^5.102.0",
-    "webpack-cli": "^6.0.1"
+    "tsdown": "^0.22.2",
+    "typescript": "^5.9.3"
   },
   "dependencies": {
     "localtunnel": "^2.0.2"
